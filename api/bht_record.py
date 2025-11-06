@@ -2,19 +2,81 @@ import fastapi
 from models.bht_record import BHTRecordCreate, BHTRecordUpdate, BHTRecordResponse
 from util.supabse import supabase
 from api.auth import get_current_user
-from google import genai
 from utils.ocr import extract_text_with_gemini
 import io
+import json
 
 router = fastapi.APIRouter()
 
 @router.post("/bht_records/upload", response_model=BHTRecordResponse)
-def create_bht_record(patient_id: str, doctor_id: str, file: fastapi.UploadFile):
-    # read file bytes
-    file_bytes = file.file.read()
-    # extract text using Gemini (or fallback)
-    ocr_text = extract_text_with_gemini(file_bytes)
-    data = {"patient_id": patient_id, "doctor_id": doctor_id, "ocr_text": ocr_text}
-    resp = supabase.table("bht_records").insert(data).execute()
-    created = resp.data[0]
-    return BHTRecordResponse(**created)
+def create_bht_record(
+    file: fastapi.UploadFile = fastapi.File(...),
+    patient_id: str = fastapi.Query(...),
+    doctor_id: str = fastapi.Query(...)
+):
+    """
+    Upload a BHT (Medical Record) image, extract structured data using Gemini OCR,
+    and insert it into the database.
+    
+    This endpoint accepts a medical record image, extracts structured medical information
+    using Google's Gemini AI, and stores the complete record in the database.
+    """
+    try:
+        # Extract structured data from the uploaded image using Gemini
+        extracted_data = extract_text_with_gemini(file)
+        
+        if not extracted_data:
+            raise fastapi.HTTPException(status_code=400, detail="Failed to extract data from image")
+        
+        # Prepare data for database insertion
+        data = {
+            "patient_id": patient_id,
+            "doctor_id": doctor_id,
+            "ocr_text": json.dumps(extracted_data.model_dump(), indent=2),
+            "diagnosis": extracted_data.diagnosis,
+            "symptoms": extracted_data.symptoms,
+            "treatment_plan": extracted_data.treatment_plan,
+            "medications": extracted_data.medications,
+            "vitals": extracted_data.vitals,
+            "procedures": extracted_data.procedures,
+            "lab_results": extracted_data.lab_results,
+            "notes": extracted_data.notes,
+            "status": "draft"
+        }
+        
+        # Insert into database
+        resp = supabase.table("bht_records").insert(data).execute()
+        
+        if not resp.data:
+            raise fastapi.HTTPException(status_code=500, detail="Failed to insert BHT record into database")
+        
+        created_record = resp.data[0]
+        return BHTRecordResponse(**created_record)
+        
+    except fastapi.HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error details: {str(e)}")  # Log the actual error
+        import traceback
+        traceback.print_exc()  # Print full traceback
+        raise fastapi.HTTPException(status_code=500, detail=f"Error processing BHT image: {str(e)}")
+
+@router.get("/bht_records/{record_id}", response_model=BHTRecordResponse)
+def get_bht_record(record_id: str):
+    resp = supabase.table("bht_records").select("*").eq("record_id", record_id).execute()
+    record = resp.data[0]
+    return BHTRecordResponse(**record)
+
+@router.get("/bht_records/", response_model=list[BHTRecordResponse])
+def list_bht_records():
+    resp = supabase.table("bht_records").select("*").execute()
+    records = resp.data
+    return [BHTRecordResponse(**record) for record in records]
+
+@router.put("/bht_records/{record_id}", response_model=BHTRecordResponse)
+def update_bht_record(record_id: str, record: BHTRecordUpdate):
+    data = {k: v for k, v in record.dict().items() if v is not None}
+    resp = supabase.table("bht_records").update(data).eq("record_id", record_id).execute()
+    updated = resp.data[0]
+    return BHTRecordResponse(**updated)
+

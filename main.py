@@ -3,9 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
-from api import user_crud
-from api import auth
-from api import ward
+from api import user_crud, auth, ward, bht_record, llm_report, patient
 
 logging.basicConfig(level=logging.INFO)
 
@@ -43,7 +41,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 app.include_router(user_crud.router, prefix="/api", tags=["users"])
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(ward.router, prefix="/api", tags=["wards"])
-
+app.include_router(bht_record.router, prefix="/api", tags=["bht_records"])
+app.include_router(llm_report.router, prefix="/api", tags=["llm_reports"])
+app.include_router(patient.router, prefix="/api", tags=["patients"])
 
 # Ensure OpenAPI exposes a clear Bearer auth scheme named 'bearerAuth'
 from fastapi.openapi.utils import get_openapi
