@@ -8,6 +8,11 @@ class RoleEnum(str, Enum):
     CONSULTANT = "Consultant"
     ADMIN = "Admin"
 
+class AccountStatus(str, Enum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
 # Request model for creating a user
 class UserCreate(BaseModel):
     name: str
@@ -27,6 +32,7 @@ class UserResponse(BaseModel):
     name: str
     email: EmailStr
     role: RoleEnum
+    account_status: Optional[AccountStatus] = AccountStatus.APPROVED
     created_at: datetime
     updated_at: datetime
 

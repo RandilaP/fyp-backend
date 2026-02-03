@@ -4,7 +4,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from api import user_crud, auth, ward, bht_record, llm_report, patient, approval, analytics
+from api import user_crud, auth, ward, bht_record, llm_report, patient, approval, analytics, consultant
 
 logging.basicConfig(level=logging.INFO)
 
@@ -47,6 +47,7 @@ app.include_router(llm_report.router, prefix="/api", tags=["llm_reports"])
 app.include_router(patient.router, prefix="/api", tags=["patients"])
 app.include_router(approval.router, prefix="/api", tags=["approval"])
 app.include_router(analytics.router, prefix="/api", tags=["analytics"])
+app.include_router(consultant.router, prefix="/api", tags=["consultants"])
 
 # Ensure OpenAPI exposes a clear Bearer auth scheme named 'bearerAuth'
 from fastapi.openapi.utils import get_openapi

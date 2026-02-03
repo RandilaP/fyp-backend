@@ -30,6 +30,19 @@ class SignupRequest(BaseModel):
 
 @router.post("/login", response_model=TokenResponse)
 def login(req: LoginRequest):
+    # Check if user exists and get account status
+    user = get_user_by_email(req.email)
+    if user and user.get("account_status") == "pending":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Your account is pending approval by a consultant"
+        )
+    if user and user.get("account_status") == "rejected":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Your account registration was rejected"
+        )
+    
     token = login_user_and_create_token(req.email, req.password)
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")

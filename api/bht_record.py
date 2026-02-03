@@ -3,6 +3,7 @@ from models.bht_record import BHTRecordCreate, BHTRecordUpdate, BHTRecordRespons
 from util.supabse import supabase
 from api.auth import get_current_user
 from utils.ocr import extract_text_with_gemini
+from typing import Optional
 import io
 import json
 
@@ -68,8 +69,38 @@ def get_bht_record(record_id: str):
     return BHTRecordResponse(**record)
 
 @router.get("/bht_records/", response_model=list[BHTRecordResponse])
-def list_bht_records():
-    resp = supabase.table("bht_records").select("*").execute()
+def list_bht_records(
+    ward_id: Optional[str] = fastapi.Query(None, description="Filter by ward ID"),
+    patient_id: Optional[str] = fastapi.Query(None, description="Filter by patient ID"),
+    status: Optional[str] = fastapi.Query(None, description="Filter by status: draft, finalized, rejected"),
+    consultant_id: Optional[str] = fastapi.Query(None, description="Filter by consultant ID (approved_by)")
+):
+    """List BHT records with optional filtering."""
+    query = supabase.table("bht_records").select("*")
+    
+    # Filter by patient_id directly
+    if patient_id:
+        query = query.eq("patient_id", patient_id)
+    
+    # Filter by ward_id (need to join with patients table)
+    if ward_id and not patient_id:
+        # Get patients in the ward first
+        patients_resp = supabase.table("patients").select("patient_id").eq("ward_id", ward_id).execute()
+        patient_ids = [p["patient_id"] for p in patients_resp.data]
+        if patient_ids:
+            query = query.in_("patient_id", patient_ids)
+        else:
+            return []  # No patients in ward
+    
+    # Filter by status
+    if status:
+        query = query.eq("status", status)
+    
+    # Filter by consultant
+    if consultant_id:
+        query = query.eq("approved_by_consultant_id", consultant_id)
+    
+    resp = query.order("upload_date", desc=True).execute()
     records = resp.data
     return [BHTRecordResponse(**record) for record in records]
 

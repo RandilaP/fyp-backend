@@ -8,8 +8,115 @@ from controllers.user_controller import (
     update_user_controller,
     delete_user_controller,
 )
+from util.supabse import supabase
+from datetime import datetime
+from pydantic import BaseModel
+from typing import Optional
 
 router = fastapi.APIRouter()
+
+
+class ApprovalRequest(BaseModel):
+    notes: Optional[str] = None
+
+
+class RejectionRequest(BaseModel):
+    rejection_reason: str
+
+
+@router.get("/users/pending-registrations", response_model=list[UserResponse], dependencies=[fastapi.Depends(require_role("Consultant", "Admin"))])
+def get_pending_registrations():
+    """Get all pending doctor registrations that need approval."""
+    response = supabase.table("users").select("*").eq("account_status", "pending").execute()
+    return [UserResponse(**user) for user in response.data]
+
+
+@router.post("/users/{user_id}/approve", dependencies=[fastapi.Depends(require_role("Consultant", "Admin"))])
+def approve_user_registration(
+    user_id: str,
+    approval_request: ApprovalRequest,
+    current_user: dict = fastapi.Depends(require_role("Consultant", "Admin"))
+):
+    """Approve a pending doctor registration."""
+    # Fetch the user
+    resp = supabase.table("users").select("*").eq("user_id", user_id).execute()
+    
+    if not resp.data:
+        raise fastapi.HTTPException(status_code=404, detail="User not found")
+    
+    user = resp.data[0]
+    
+    if user["account_status"] != "pending":
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"User account is already {user['account_status']}"
+        )
+    
+    # Update user to approved
+    update_data = {
+        "account_status": "approved",
+        "approved_by": current_user["user_id"],
+        "approved_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
+    }
+    
+    update_resp = supabase.table("users").update(update_data).eq("user_id", user_id).execute()
+    
+    if not update_resp.data:
+        raise fastapi.HTTPException(status_code=500, detail="Failed to approve user")
+    
+    return {
+        "success": True,
+        "message": "User registration approved successfully",
+        "user_id": user_id,
+        "user_name": user["name"],
+        "approved_by": current_user["name"]
+    }
+
+
+@router.post("/users/{user_id}/reject", dependencies=[fastapi.Depends(require_role("Consultant", "Admin"))])
+def reject_user_registration(
+    user_id: str,
+    rejection_request: RejectionRequest,
+    current_user: dict = fastapi.Depends(require_role("Consultant", "Admin"))
+):
+    """Reject a pending doctor registration."""
+    # Fetch the user
+    resp = supabase.table("users").select("*").eq("user_id", user_id).execute()
+    
+    if not resp.data:
+        raise fastapi.HTTPException(status_code=404, detail="User not found")
+    
+    user = resp.data[0]
+    
+    if user["account_status"] != "pending":
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"User account is already {user['account_status']}"
+        )
+    
+    # Update user to rejected
+    update_data = {
+        "account_status": "rejected",
+        "rejected_by": current_user["user_id"],
+        "rejection_reason": rejection_request.rejection_reason,
+        "rejected_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.utcnow().isoformat()
+    }
+    
+    update_resp = supabase.table("users").update(update_data).eq("user_id", user_id).execute()
+    
+    if not update_resp.data:
+        raise fastapi.HTTPException(status_code=500, detail="Failed to reject user")
+    
+    return {
+        "success": True,
+        "message": "User registration rejected",
+        "user_id": user_id,
+        "user_name": user["name"],
+        "rejection_reason": rejection_request.rejection_reason,
+        "rejected_by": current_user["name"]
+    }
 
 
 @router.get("/users/{user_id}", response_model=UserResponse, dependencies=[fastapi.Depends(get_current_user)])

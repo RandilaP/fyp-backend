@@ -16,7 +16,9 @@ def signup_doctor(name: str, email: str, password: str, role: str = "Doctor") ->
     if get_user_by_email(email):
         raise ValueError("User already exists")
     pwd_hash = hash_password(password)
-    data = {"name": name, "email": email, "role": role, "password_hash": pwd_hash}
+    # Doctors need approval, Consultants are auto-approved
+    account_status = "pending" if role == "Doctor" else "approved"
+    data = {"name": name, "email": email, "role": role, "password_hash": pwd_hash, "account_status": account_status}
     resp = supabase.table("users").insert(data).execute()
     return resp.data[0]
 
@@ -25,6 +27,9 @@ def authenticate_user(email: str, password: str) -> Optional[dict]:
     if not user:
         return None
     if not verify_password(password, user.get("password_hash", "")):
+        return None
+    # Check if account is approved
+    if user.get("account_status") != "approved":
         return None
     return user
 
