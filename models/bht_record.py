@@ -45,6 +45,19 @@ class BHTRecordResponse(BaseModel):
     lab_results: Optional[Dict]
     notes: Optional[str]
     status: str
+    
+    # Approval workflow fields (FR3)
+    approved_by_consultant_id: Optional[str] = None
+    rejected_by_consultant_id: Optional[str] = None
+    finalized_date: Optional[datetime] = None
+    rejected_date: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    discharge_timestamp: Optional[datetime] = None
+    
+    # Performance analytics fields (FR6 - Objective R07)
+    wer: Optional[float] = None  # Word Error Rate
+    ner_f1_score: Optional[float] = None  # NER F1-Score
+    
     created_at: datetime
     updated_at: datetime
 

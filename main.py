@@ -2,8 +2,9 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 
-from api import user_crud, auth, ward, bht_record, llm_report, patient
+from api import user_crud, auth, ward, bht_record, llm_report, patient, approval, analytics
 
 logging.basicConfig(level=logging.INFO)
 
@@ -44,6 +45,8 @@ app.include_router(ward.router, prefix="/api", tags=["wards"])
 app.include_router(bht_record.router, prefix="/api", tags=["bht_records"])
 app.include_router(llm_report.router, prefix="/api", tags=["llm_reports"])
 app.include_router(patient.router, prefix="/api", tags=["patients"])
+app.include_router(approval.router, prefix="/api", tags=["approval"])
+app.include_router(analytics.router, prefix="/api", tags=["analytics"])
 
 # Ensure OpenAPI exposes a clear Bearer auth scheme named 'bearerAuth'
 from fastapi.openapi.utils import get_openapi
@@ -89,6 +92,14 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Your Next.js app
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods including POST, OPTIONS
+    allow_headers=["*"],  # Allow all headers
+)
 
 
 if __name__ == "__main__":

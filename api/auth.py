@@ -24,6 +24,7 @@ class SignupRequest(BaseModel):
     name: str
     email: str
     password: str
+    role: str  # Must be "Doctor" or "Consultant"
 
 
 
@@ -37,9 +38,14 @@ def login(req: LoginRequest):
 
 @router.post("/signup")
 def signup(req: SignupRequest):
-    # Only allow signup as Doctor via this endpoint
+    # Validate role
+    if req.role not in ["Doctor", "Consultant"]:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Role must be either 'Doctor' or 'Consultant'"
+        )
     try:
-        created = signup_doctor(req.name, req.email, req.password)
+        created = signup_doctor(req.name, req.email, req.password, req.role)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     created.pop("password_hash", None)

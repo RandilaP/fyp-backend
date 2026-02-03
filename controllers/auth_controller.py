@@ -12,11 +12,11 @@ def get_user_by_email(email: str) -> Optional[dict]:
     return data[0]
 
 
-def signup_doctor(name: str, email: str, password: str) -> dict:
+def signup_doctor(name: str, email: str, password: str, role: str = "Doctor") -> dict:
     if get_user_by_email(email):
         raise ValueError("User already exists")
     pwd_hash = hash_password(password)
-    data = {"name": name, "email": email, "role": "Doctor", "password_hash": pwd_hash}
+    data = {"name": name, "email": email, "role": role, "password_hash": pwd_hash}
     resp = supabase.table("users").insert(data).execute()
     return resp.data[0]
 
