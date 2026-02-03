@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
+from typing import Optional
 
 from util.supabse import supabase
 from utils.security import verify_password, create_access_token, decode_token, hash_password
@@ -25,6 +26,7 @@ class SignupRequest(BaseModel):
     email: str
     password: str
     role: str  # Must be "Doctor" or "Consultant"
+    ward_id: Optional[str] = None  # Required for Doctors, optional for Consultants
 
 
 
@@ -57,8 +59,25 @@ def signup(req: SignupRequest):
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Role must be either 'Doctor' or 'Consultant'"
         )
+    
+    # Validate ward_id for Doctors
+    if req.role == "Doctor" and not req.ward_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Doctors must select a ward during registration"
+        )
+    
+    # Verify ward exists if ward_id is provided
+    if req.ward_id:
+        ward_resp = supabase.table("wards").select("ward_id").eq("ward_id", req.ward_id).execute()
+        if not ward_resp.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid ward_id. Ward does not exist."
+            )
+    
     try:
-        created = signup_doctor(req.name, req.email, req.password, req.role)
+        created = signup_doctor(req.name, req.email, req.password, req.role, req.ward_id)
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     created.pop("password_hash", None)

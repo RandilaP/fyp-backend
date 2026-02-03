@@ -26,8 +26,8 @@ class RejectionRequest(BaseModel):
 
 @router.get("/users/pending-registrations", response_model=list[UserResponse], dependencies=[fastapi.Depends(require_role("Consultant", "Admin"))])
 def get_pending_registrations():
-    """Get all pending doctor registrations that need approval."""
-    response = supabase.table("users").select("*").eq("account_status", "pending").execute()
+    """Get all doctor registrations that need approval (pending or rejected)."""
+    response = supabase.table("users").select("*").in_("account_status", ["pending", "rejected"]).order("created_at", desc=False).execute()
     return [UserResponse(**user) for user in response.data]
 
 
@@ -46,10 +46,11 @@ def approve_user_registration(
     
     user = resp.data[0]
     
-    if user["account_status"] != "pending":
+    # Allow approving pending or rejected accounts
+    if user["account_status"] not in ["pending", "rejected"]:
         raise fastapi.HTTPException(
             status_code=400,
-            detail=f"User account is already {user['account_status']}"
+            detail=f"Cannot approve user with status: {user['account_status']}"
         )
     
     # Update user to approved

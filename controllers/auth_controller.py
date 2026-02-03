@@ -12,13 +12,18 @@ def get_user_by_email(email: str) -> Optional[dict]:
     return data[0]
 
 
-def signup_doctor(name: str, email: str, password: str, role: str = "Doctor") -> dict:
+def signup_doctor(name: str, email: str, password: str, role: str = "Doctor", ward_id: str = None) -> dict:
     if get_user_by_email(email):
         raise ValueError("User already exists")
     pwd_hash = hash_password(password)
     # Doctors need approval, Consultants are auto-approved
     account_status = "pending" if role == "Doctor" else "approved"
     data = {"name": name, "email": email, "role": role, "password_hash": pwd_hash, "account_status": account_status}
+    
+    # Add ward_id if provided
+    if ward_id:
+        data["ward_id"] = ward_id
+    
     resp = supabase.table("users").insert(data).execute()
     return resp.data[0]
 

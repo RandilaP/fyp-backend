@@ -19,12 +19,14 @@ class UserCreate(BaseModel):
     email: EmailStr
     role: RoleEnum
     password: str
+    ward_id: Optional[str] = None  # Required for Doctors, optional for Consultants/Admins
 
 # Request model for updating a user
 class UserUpdate(BaseModel):
     name: Optional[str]
     email: Optional[EmailStr]
     role: Optional[RoleEnum]
+    ward_id: Optional[str] = None
 
 # Response model
 class UserResponse(BaseModel):
@@ -33,6 +35,7 @@ class UserResponse(BaseModel):
     email: EmailStr
     role: RoleEnum
     account_status: Optional[AccountStatus] = AccountStatus.APPROVED
+    ward_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
