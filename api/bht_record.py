@@ -6,6 +6,7 @@ from utils.ocr import extract_text_with_gemini
 from typing import Optional
 import io
 import json
+import uuid
 
 router = fastapi.APIRouter()
 
@@ -64,7 +65,23 @@ def create_bht_record(
 
 @router.get("/bht_records/{record_id}", response_model=BHTRecordResponse)
 def get_bht_record(record_id: str):
-    resp = supabase.table("bht_records").select("*").eq("record_id", record_id).execute()
+    # Validate UUID format
+    try:
+        uuid.UUID(record_id)
+    except ValueError:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"Invalid BHT ID format: '{record_id}'. Expected a valid UUID."
+        )
+    
+    resp = supabase.table("bht_records").select("*").eq("bht_id", record_id).execute()
+    
+    if not resp.data or len(resp.data) == 0:
+        raise fastapi.HTTPException(
+            status_code=404,
+            detail=f"BHT record with ID '{record_id}' not found"
+        )
+    
     record = resp.data[0]
     return BHTRecordResponse(**record)
 
@@ -106,8 +123,40 @@ def list_bht_records(
 
 @router.put("/bht_records/{record_id}", response_model=BHTRecordResponse)
 def update_bht_record(record_id: str, record: BHTRecordUpdate):
+    # Validate UUID format
+    try:
+        uuid.UUID(record_id)
+    except ValueError:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail=f"Invalid BHT ID format: '{record_id}'. Expected a valid UUID."
+        )
+    
     data = {k: v for k, v in record.dict().items() if v is not None}
-    resp = supabase.table("bht_records").update(data).eq("record_id", record_id).execute()
+    
+    if not data:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail="No fields provided to update"
+        )
+    
+    # Prevent direct status changes - status should only change through specific workflows
+    # - draft -> finalized: Only through submit-for-review endpoint
+    # - finalized -> approved/rejected: Only through consultant approval workflow
+    if "status" in data:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail="Cannot update BHT status directly. Use the submit-for-review endpoint to finalize BHT records."
+        )
+    
+    resp = supabase.table("bht_records").update(data).eq("bht_id", record_id).execute()
+    
+    if not resp.data or len(resp.data) == 0:
+        raise fastapi.HTTPException(
+            status_code=404,
+            detail=f"BHT record with ID '{record_id}' not found"
+        )
+    
     updated = resp.data[0]
     return BHTRecordResponse(**updated)
 

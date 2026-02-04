@@ -27,7 +27,8 @@ class BHTRecordUpdate(BaseModel):
     procedures: Optional[str]
     lab_results: Optional[Dict]
     notes: Optional[str]
-    status: Optional[str]
+    # status field removed - cannot be updated directly
+    # Use submit-for-review endpoint to finalize BHTs
 
 class BHTRecordResponse(BaseModel):
     bht_id: str
