@@ -175,6 +175,43 @@ def extract_text_with_gemini(file) -> BHTExtractedData:
     return extract_image_with_gemini_vision(file)
 
 
+def _strip_recommendations_section(summary_text: str) -> str:
+    """Remove a trailing recommendations section from generated summaries.
+
+    The model may still include recommendations even when instructed not to.
+    This keeps the report focused on summary-only content.
+    """
+    if not summary_text:
+        return summary_text
+
+    lines = summary_text.splitlines()
+    cleaned_lines = []
+    stop_at_recommendations = False
+
+    for line in lines:
+        normalized = line.strip().lower()
+        is_recommendations_heading = (
+            normalized.startswith("9.") and "recommendation" in normalized
+        ) or (
+            normalized.startswith("##") and "recommendation" in normalized
+        ) or (
+            normalized.startswith("**recommendation")
+        ) or (
+            normalized == "recommendations"
+        )
+
+        if is_recommendations_heading:
+            stop_at_recommendations = True
+            continue
+
+        if stop_at_recommendations:
+            continue
+
+        cleaned_lines.append(line)
+
+    return "\n".join(cleaned_lines).strip()
+
+
 def generate_patient_summary_with_gemini(patient: dict, bht_records: list) -> str:
     """Generate a comprehensive patient summary using all BHT records with Gemini.
     
@@ -229,8 +266,8 @@ Based on the above patient information and BHT records, generate a comprehensive
 6. **Vital Signs Trends**: Any notable patterns or changes in vital signs
 7. **Laboratory Findings**: Summary of significant lab results and their implications
 8. **Current Status**: The patient's current condition based on the most recent BHT
-9. **Recommendations**: Any suggested follow-up actions or areas requiring attention
 
+Do not include a recommendations section.
 Format the summary in clear, professional medical language suitable for consultant review. Use markdown formatting for better readability.
 """
         
@@ -239,7 +276,7 @@ Format the summary in clear, professional medical language suitable for consulta
             contents=prompt
         )
         
-        return response.text
+        return _strip_recommendations_section(response.text)
         
     except Exception as e:
         print(f"Error generating summary: {e}")
