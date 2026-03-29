@@ -17,7 +17,8 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def create_access_token(subject: str, data: dict = None, expires_minutes: Optional[int] = None) -> str:
     now = datetime.utcnow()
-    exp = now + timedelta(minutes=(expires_minutes or settings.ACCESS_TOKEN_EXPIRE_MINUTES))
+    token_lifetime_minutes = expires_minutes if expires_minutes is not None else settings.ACCESS_TOKEN_EXPIRE_MINUTES
+    exp = now + timedelta(minutes=token_lifetime_minutes)
     payload = {"sub": subject, "iat": now, "exp": exp}
     if data:
         payload.update(data)

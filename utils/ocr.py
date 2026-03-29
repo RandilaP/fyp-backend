@@ -1,9 +1,33 @@
-from typing import Optional, Dict
+"""
+HYBRID OCR PIPELINE ORCHESTRATOR
+
+Coordinates the two-stage hybrid pipeline:
+- Stage 1: Gemini OCR extraction (ocr_extractor module)
+- Stage 2: Gemini semantic structuring (text_structurer module)
+
+Also provides legacy Gemini-vision-only fallback and patient summarization.
+"""
+
+from typing import Optional, Dict, List
 import io
 import os
-from pydantic import BaseModel, Field
-from typing import List, Optional
+import json
 
+import dotenv
+
+dotenv.load_dotenv()
+
+# Import modules
+from utils.ocr_extractor import extract_raw_text_with_gemini_ocr
+from utils.text_structurer import (
+    BHTExtractedData,
+    structure_raw_ocr_text_with_gemini,
+    extract_image_with_gemini_vision,
+    get_bht_semantic_correction_prompt_template,
+    get_bht_extraction_output_schema,
+)
+
+# Gemini imports
 try:
     from google import genai
     from google.genai import types
@@ -11,101 +35,144 @@ except ImportError:
     genai = None
     types = None
 
-import dotenv
-
-dotenv.load_dotenv()
 
 
-class BHTExtractedData(BaseModel):
-    """Structured data extracted from a BHT (Bed Head Ticket) medical record image."""
-    
-    diagnosis: Optional[str] = Field(
-        description="The primary diagnosis or medical condition identified in the BHT. Include ICD codes if visible."
-    )
-    symptoms: Optional[str] = Field(
-        description="List of symptoms or complaints documented in the BHT. Include onset, duration, and severity if mentioned."
-    )
-    treatment_plan: Optional[str] = Field(
-        description="The treatment plan or care instructions documented in the BHT. Include dosages, frequencies, and durations."
-    )
-    medications: Optional[str] = Field(
-        description="List of medications prescribed or administered. Include drug names, dosages, routes, and frequencies."
-    )
-    vitals: Optional[Dict] = Field(
-        description="Vital signs recorded in the BHT. Should include values like temperature, blood pressure, heart rate, respiratory rate, oxygen saturation, etc."
-    )
-    procedures: Optional[str] = Field(
-        description="Medical procedures performed or planned. Include procedure names, dates, and any relevant details."
-    )
-    lab_results: Optional[Dict] = Field(
-        description="Laboratory test results documented in the BHT. Include test names and their values with units."
-    )
-    notes: Optional[str] = Field(
-        description="Additional clinical notes, observations, or remarks from healthcare providers."
-    )
+def get_bht_extraction_spec():
+    """Return canonical prompt template and output schema for cross-model evaluation."""
+    return {
+        "task": "bht_ocr_semantic_structuring",
+        "prompt_template": get_bht_semantic_correction_prompt_template(),
+        "output_schema": get_bht_extraction_output_schema(),
+        "notes": [
+            "Use the same prompt_template and output_schema for all models.",
+            "Replace {{RAW_OCR_TEXT}} with OCR text from your chosen OCR stage.",
+            "Require model output as strict JSON only.",
+        ],
+    }
 
 
-def extract_text_with_gemini(file) -> Optional[BHTExtractedData]:
-    """Use Google GenAI (Gemini) to extract structured data from a BHT medical record image.
 
-    This function uses the Gemini API with structured output to extract medical information
-    from uploaded BHT (Bed Head Ticket) images and return it as a validated Pydantic model.
+def extract_text_with_hybrid_pipeline(file) -> BHTExtractedData:
     """
+    ═══════════════════════════════════════════════════════════════════
+    HYBRID OCR PIPELINE: Gemini OCR + Gemini Semantic Structuring
+    ═══════════════════════════════════════════════════════════════════
+    
+    Complete two-stage hybrid pipeline for BHT medical record extraction:
+    
+    **Stage 1 (OCR Extraction)**:
+    - Input: BHT image (handwritten medical record)
+    - Method: Gemini Vision OCR text extraction
+    - Output: Raw noisy text with potential transcription errors
+    
+    **Stage 2 (Semantic Post-Correction)**:
+    - Input: Raw OCR text from Stage 1
+    - Method: Gemini 2.5 Flash with medical domain knowledge
+    - Output: Corrected, structured, and validated medical data
+    
+        **Fallback Strategy**:
+        - If Gemini OCR fails or produces poor results (<10 chars), automatically
+            falls back to Gemini's native vision understanding for direct
+            image-to-structured-data extraction
+    
+    This hybrid approach combines:
+    - Gemini OCR text extraction
+    - Gemini's semantic understanding and medical knowledge
+    - Gemini's vision understanding as a robust fallback
+    
+    Args:
+        file: UploadFile object containing the BHT image
+        
+    Returns:
+        BHTExtractedData: Validated structured medical record with confidence score
+    """
+    print("\n" + "="*70)
+    print("HYBRID PIPELINE: Gemini OCR + Gemini Semantic Structuring")
+    print("="*70)
+    
+    ocr_failed = False
+    raw_ocr_text = None
+    
     try:
-        if genai is None:
-            raise RuntimeError("google.genai is not installed. Please install it with: pip install google-genai")
+        # ═══════════════════════════════════════════════════════════════
+        # STAGE 1: OCR EXTRACTION
+        # ═══════════════════════════════════════════════════════════════
+        print("\n[STAGE 1] Extracting raw text with Gemini OCR...")
+        try:
+            raw_ocr_text = extract_raw_text_with_gemini_ocr(file)
+            
+            # Check if OCR output is too short or empty
+            if not raw_ocr_text or len(raw_ocr_text.strip()) < 10:
+                print(f"[WARNING] OCR output too short ({len(raw_ocr_text.strip()) if raw_ocr_text else 0} chars).")
+                print("Falling back to Gemini vision...")
+                ocr_failed = True
+        except Exception as ocr_error:
+            print(f"[WARNING] Gemini OCR failed: {ocr_error}")
+            print("Falling back to Gemini vision...")
+            ocr_failed = True
         
-        # Read file bytes
-        file_bytes = file.file.read()
+        # ═══════════════════════════════════════════════════════════════
+        # FALLBACK: Direct Gemini Vision
+        # ═══════════════════════════════════════════════════════════════
+        if ocr_failed:
+            print("\n[FALLBACK] Using Gemini vision for direct extraction...")
+            if hasattr(file.file, 'seek'):
+                file.file.seek(0)
+            structured_data = extract_image_with_gemini_vision(file)
+            
+            print("\n" + "="*70)
+            print("FALLBACK COMPLETE (Gemini Vision Only)")
+            print("="*70)
+            print(f"Fields Extracted: {sum(1 for k, v in structured_data.model_dump().items() if v is not None)}")
+            print(f"Confidence: {structured_data.confidence_score}")
+            print("="*70 + "\n")
+            
+            return structured_data
         
-        # Determine mime type from file
-        mime_type = file.content_type or 'image/jpeg'
+        # ═══════════════════════════════════════════════════════════════
+        # STAGE 2: SEMANTIC POST-CORRECTION
+        # ═══════════════════════════════════════════════════════════════
+        print("\n[STAGE 2] Structuring with Gemini semantic correction...")
+        structured_data = structure_raw_ocr_text_with_gemini(raw_ocr_text)
         
-        client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        print("\n" + "="*70)
+        print("HYBRID PIPELINE COMPLETE")
+        print("="*70)
+        print(f"Raw OCR Length: {len(raw_ocr_text)} chars")
+        print(f"Fields Extracted: {sum(1 for k, v in structured_data.model_dump().items() if v is not None)}")
+        print(f"Confidence: {structured_data.confidence_score}")
+        print("="*70 + "\n")
         
-        prompt = """
-You are a medical records processing AI assistant. Analyze this BHT (Bed Head Ticket) medical record image carefully.
-
-Extract the following information accurately:
-- **Diagnosis**: Primary diagnosis, conditions, or ICD codes
-- **Symptoms**: Patient complaints, symptoms, onset, duration, and severity
-- **Treatment Plan**: Care instructions, treatment protocols, and management plans
-- **Medications**: All prescribed or administered medications with exact dosages, routes (oral, IV, etc.), and frequencies
-- **Vitals**: Vital signs including temperature, BP (systolic/diastolic), heart rate, respiratory rate, SpO2, etc.
-- **Procedures**: Any medical procedures performed or scheduled
-- **Lab Results**: Laboratory test results with values and units (CBC, blood chemistry, etc.)
-- **Notes**: Additional clinical observations, progress notes, or provider remarks
-
-Important instructions:
-1. Extract information EXACTLY as written in the document
-2. For vitals and lab results, preserve the numeric values with their units
-3. If information is not visible or unclear, leave that field empty
-4. Maintain medical terminology and abbreviations as they appear
-5. Be thorough - capture all relevant medical information visible in the image
-"""
-        
-        response = client.models.generate_content(
-            model='gemini-2.5-flash',
-            contents=[
-                types.Part.from_bytes(
-                    data=file_bytes,
-                    mime_type=mime_type,
-                ),
-                prompt
-            ],
-            config={
-                "response_mime_type": "application/json",
-                "response_json_schema": BHTExtractedData.model_json_schema(),
-            }
-        )
-        
-        # Parse and validate the response using Pydantic
-        extracted_data = BHTExtractedData.model_validate_json(response.text)
-        return extracted_data
+        return structured_data
         
     except Exception as e:
-        print(f"Error extracting text: {e}")
+        print(f"\n[ERROR] Hybrid pipeline failed: {e}")
+        
+        # Last resort: Try Gemini vision if we haven't already
+        if not ocr_failed:
+            try:
+                print("\n[LAST RESORT] Attempting Gemini vision...")
+                if hasattr(file.file, 'seek'):
+                    file.file.seek(0)
+                return extract_image_with_gemini_vision(file)
+            except Exception as fallback_error:
+                print(f"[ERROR] Fallback also failed: {fallback_error}")
         raise e
+
+
+def extract_text_with_gemini(file) -> BHTExtractedData:
+    """LEGACY: Direct Gemini vision-based extraction.
+    
+    This is kept for backward compatibility but the hybrid pipeline
+    (extract_text_with_hybrid_pipeline) is recommended for better accuracy.
+    
+    Args:
+        file: UploadFile object containing the BHT image
+        
+    Returns:
+        BHTExtractedData: Extracted and structured medical record data
+    """
+    return extract_image_with_gemini_vision(file)
 
 
 def generate_patient_summary_with_gemini(patient: dict, bht_records: list) -> str:

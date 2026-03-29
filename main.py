@@ -96,10 +96,12 @@ app.openapi = custom_openapi
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # Your Next.js app
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    # Support local dev servers that may run on non-3000 ports (e.g. 3001/5173).
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods including POST, OPTIONS
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
