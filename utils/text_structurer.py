@@ -63,6 +63,10 @@ class BHTExtractedData(BaseModel):
         default=None,
         description="Raw OCR output before semantic post-correction (populated in hybrid mode)."
     )
+    ocr_engine: Optional[str] = Field(
+        default=None,
+        description="OCR engine used for raw text extraction (e.g., gemini, trocr)."
+    )
     confidence_score: Optional[float] = Field(
         default=None,
         description="Confidence score of the extraction process (0.0 to 1.0)."

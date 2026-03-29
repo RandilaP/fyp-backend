@@ -1,15 +1,6 @@
-"""
-HYBRID OCR PIPELINE ORCHESTRATOR
-
-Coordinates the two-stage hybrid pipeline:
-- Stage 1: Gemini OCR extraction (ocr_extractor module)
-- Stage 2: Gemini semantic structuring (text_structurer module)
-
-Also provides legacy Gemini-vision-only fallback and patient summarization.
-"""
+"""Hybrid OCR + structuring orchestrator for BHT extraction."""
 
 from typing import Optional, Dict, List
-import io
 import os
 import json
 
@@ -18,7 +9,7 @@ import dotenv
 dotenv.load_dotenv()
 
 # Import modules
-from utils.ocr_extractor import extract_raw_text_with_gemini_ocr
+from utils.ocr_extractor import extract_raw_text_with_gemini_ocr, extract_raw_text_with_trocr
 from utils.text_structurer import (
     BHTExtractedData,
     structure_raw_ocr_text_with_gemini,
@@ -34,6 +25,9 @@ try:
 except ImportError:
     genai = None
     types = None
+
+
+MIN_OCR_TEXT_LENGTH = int(os.getenv("OCR_MIN_TEXT_LENGTH", "10"))
 
 
 
@@ -52,7 +46,44 @@ def get_bht_extraction_spec():
 
 
 
-def extract_text_with_hybrid_pipeline(file) -> BHTExtractedData:
+def _is_usable_ocr_text(text: Optional[str]) -> bool:
+    return bool(text and len(text.strip()) >= MIN_OCR_TEXT_LENGTH)
+
+
+def _ocr_provider_order(preferred_provider: str) -> list[str]:
+    provider = (preferred_provider or "gemini").strip().lower()
+    if provider == "trocr":
+        return ["trocr", "gemini"]
+    if provider == "auto":
+        return ["gemini", "trocr"]
+    return ["gemini", "trocr"]
+
+
+def _extract_raw_text_with_fallback(file, preferred_provider: str = "gemini") -> tuple[str, str]:
+    errors: list[str] = []
+    for provider in _ocr_provider_order(preferred_provider):
+        try:
+            if hasattr(file.file, "seek"):
+                file.file.seek(0)
+
+            if provider == "gemini":
+                raw = extract_raw_text_with_gemini_ocr(file)
+            elif provider == "trocr":
+                raw = extract_raw_text_with_trocr(file)
+            else:
+                continue
+
+            if _is_usable_ocr_text(raw):
+                return raw, provider
+
+            errors.append(f"{provider}: OCR output too short")
+        except Exception as err:
+            errors.append(f"{provider}: {err}")
+
+    raise RuntimeError("All OCR providers failed. " + " | ".join(errors))
+
+
+def extract_text_with_hybrid_pipeline(file, ocr_provider: str = "gemini") -> BHTExtractedData:
     """
     ═══════════════════════════════════════════════════════════════════
     HYBRID OCR PIPELINE: Gemini OCR + Gemini Semantic Structuring
@@ -87,27 +118,23 @@ def extract_text_with_hybrid_pipeline(file) -> BHTExtractedData:
         BHTExtractedData: Validated structured medical record with confidence score
     """
     print("\n" + "="*70)
-    print("HYBRID PIPELINE: Gemini OCR + Gemini Semantic Structuring")
+    print("HYBRID PIPELINE: OCR + Gemini Semantic Structuring")
     print("="*70)
     
     ocr_failed = False
     raw_ocr_text = None
+    used_ocr_provider = None
     
     try:
         # ═══════════════════════════════════════════════════════════════
         # STAGE 1: OCR EXTRACTION
         # ═══════════════════════════════════════════════════════════════
-        print("\n[STAGE 1] Extracting raw text with Gemini OCR...")
+        print("\n[STAGE 1] Extracting raw text from OCR provider...")
         try:
-            raw_ocr_text = extract_raw_text_with_gemini_ocr(file)
-            
-            # Check if OCR output is too short or empty
-            if not raw_ocr_text or len(raw_ocr_text.strip()) < 10:
-                print(f"[WARNING] OCR output too short ({len(raw_ocr_text.strip()) if raw_ocr_text else 0} chars).")
-                print("Falling back to Gemini vision...")
-                ocr_failed = True
+            raw_ocr_text, used_ocr_provider = _extract_raw_text_with_fallback(file, preferred_provider=ocr_provider)
+            print(f"[STAGE 1] OCR provider used: {used_ocr_provider}")
         except Exception as ocr_error:
-            print(f"[WARNING] Gemini OCR failed: {ocr_error}")
+            print(f"[WARNING] OCR providers failed: {ocr_error}")
             print("Falling back to Gemini vision...")
             ocr_failed = True
         
@@ -134,11 +161,13 @@ def extract_text_with_hybrid_pipeline(file) -> BHTExtractedData:
         # ═══════════════════════════════════════════════════════════════
         print("\n[STAGE 2] Structuring with Gemini semantic correction...")
         structured_data = structure_raw_ocr_text_with_gemini(raw_ocr_text)
+        structured_data.ocr_engine = used_ocr_provider
         
         print("\n" + "="*70)
         print("HYBRID PIPELINE COMPLETE")
         print("="*70)
         print(f"Raw OCR Length: {len(raw_ocr_text)} chars")
+        print(f"OCR Provider: {used_ocr_provider}")
         print(f"Fields Extracted: {sum(1 for k, v in structured_data.model_dump().items() if v is not None)}")
         print(f"Confidence: {structured_data.confidence_score}")
         print("="*70 + "\n")

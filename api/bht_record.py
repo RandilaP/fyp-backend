@@ -2,7 +2,11 @@ import fastapi
 from models.bht_record import BHTRecordCreate, BHTRecordUpdate, BHTRecordResponse
 from util.supabse import supabase
 from api.auth import get_current_user
-from utils.ocr import extract_text_with_hybrid_pipeline, extract_text_with_gemini
+from utils.ocr import (
+    extract_text_with_hybrid_pipeline,
+    extract_text_with_gemini,
+    get_bht_extraction_spec as get_ocr_extraction_spec,
+)
 from utils.text_structurer import BHTExtractedData
 from typing import Optional
 import io
@@ -61,16 +65,7 @@ def _insert_bht_record_with_optional_fallback(data: dict):
 @router.get("/bht_records/extraction/spec")
 def get_bht_extraction_spec():
     """Return canonical prompt template and output schema for cross-model evaluation."""
-    return {
-        "task": "bht_ocr_semantic_structuring",
-        "prompt_template": get_bht_semantic_correction_prompt_template(),
-        "output_schema": get_bht_extraction_output_schema(),
-        "notes": [
-            "Use the same prompt_template and output_schema for all models.",
-            "Replace {{RAW_OCR_TEXT}} with OCR text from your chosen OCR stage.",
-            "Require model output as strict JSON only.",
-        ],
-    }
+    return get_ocr_extraction_spec()
 
 @router.post("/bht_records/upload", response_model=BHTRecordResponse)
 def create_bht_record(
@@ -79,15 +74,19 @@ def create_bht_record(
     doctor_id: str = fastapi.Query(...),
     use_hybrid_pipeline: bool = fastapi.Query(
         default=True,
-        description="Use hybrid Gemini OCR + Gemini structuring pipeline (True) or legacy Gemini-only (False)"
-    )
+        description="Use hybrid OCR + Gemini structuring pipeline (True) or legacy Gemini-only (False)"
+    ),
+    ocr_provider: str = fastapi.Query(
+        default="gemini",
+        description="Preferred OCR provider for hybrid mode: gemini, trocr, or auto",
+    ),
 ):
     """
     Upload a BHT (Medical Record) image, extract structured data using hybrid OCR pipeline,
     and insert it into the database.
     
     **Hybrid Pipeline (Recommended - Default)**:
-    - Stage 1: Gemini OCR extracts raw text from medical records
+    - Stage 1: OCR extracts raw text (Gemini primary, TrOCR fallback)
     - Stage 2: Gemini performs semantic post-correction and structuring
     
     **Legacy Mode**:
@@ -99,9 +98,16 @@ def create_bht_record(
     Gemini OCR text extraction with Gemini's medical domain semantic structuring.
     """
     try:
+        ocr_provider = (ocr_provider or "gemini").strip().lower()
+        if ocr_provider not in {"gemini", "trocr", "auto"}:
+            raise fastapi.HTTPException(
+                status_code=400,
+                detail="Invalid ocr_provider. Use one of: gemini, trocr, auto",
+            )
+
         # Extract structured data using the hybrid pipeline or legacy method
         if use_hybrid_pipeline:
-            extracted_data = extract_text_with_hybrid_pipeline(file)
+            extracted_data = extract_text_with_hybrid_pipeline(file, ocr_provider=ocr_provider)
         else:
             extracted_data = extract_text_with_gemini(file)
         

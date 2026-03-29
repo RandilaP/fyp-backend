@@ -120,7 +120,7 @@ def get_my_bhts(
     return [BHTRecordResponse(**record) for record in response.data]
 
 
-from utils.ocr import generate_patient_summary_with_gemini
+from utils.llm_report_service import generate_patient_summary_with_gemini
 
 @router.post("/patients/{patient_id}/generate-summary")
 def generate_patient_summary(

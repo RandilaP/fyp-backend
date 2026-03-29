@@ -268,8 +268,6 @@ def reject_bht_record(
     
     updated_record = update_resp.data[0]
     
-    # TODO: Implement House Officer notification
-    # This could be done via email, in-app notification, or audit log
     house_officer_id = updated_record.get("doctor_id")
     notification_logged = False
     
