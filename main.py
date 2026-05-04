@@ -3,6 +3,7 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 from api import user_crud, auth, ward, bht_record, llm_report, patient, approval, analytics, consultant
 
@@ -14,7 +15,7 @@ app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://fyp-fxvhd5df6-isiris-projects-431850de.vercel.app",
+        os.getenv("CORS_ORIGINS", "http://localhost:3000").split(","),
         "http://localhost:3000",
     ],
     allow_credentials=True,
