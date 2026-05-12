@@ -45,3 +45,16 @@ def login_user_and_create_token(email: str, password: str) -> str:
         return None
     token = create_access_token(subject=user["email"], data={"user_id": user["user_id"], "role": user["role"]})
     return token
+
+
+def change_password(email: str, new_password: str) -> dict:
+    user = get_user_by_email(email)
+    if not user:
+        raise ValueError("User not found")
+    pwd_hash = hash_password(new_password)
+    resp = supabase.table("users").update({"password_hash": pwd_hash}).eq("email", email).execute()
+    if not resp.data:
+        raise ValueError("Failed to update password")
+    updated = resp.data[0]
+    updated.pop("password_hash", None)
+    return updated

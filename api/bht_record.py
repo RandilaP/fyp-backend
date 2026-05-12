@@ -272,11 +272,33 @@ def update_bht_record(record_id: str, record: BHTRecordUpdate):
             status_code=400,
             detail="No fields provided to update"
         )
+
+    current_resp = supabase.table("bht_records").select("*").eq("bht_id", record_id).execute()
+    if not current_resp.data:
+        raise fastapi.HTTPException(
+            status_code=404,
+            detail=f"BHT record with ID '{record_id}' not found"
+        )
+
+    current_record = current_resp.data[0]
+    changed_fields = {
+        key: value
+        for key, value in data.items()
+        if current_record.get(key) != value
+    }
+
+    if not changed_fields:
+        raise fastapi.HTTPException(
+            status_code=400,
+            detail="No changes detected. Please modify the BHT record before resubmitting it."
+        )
+
+    if current_record.get("status") == "rejected":
+        data["status"] = "draft"
     
-    # Prevent direct status changes - status should only change through specific workflows
-    # - draft -> finalized: Only through submit-for-review endpoint
-    # - finalized -> approved/rejected: Only through consultant approval workflow
-    if "status" in data:
+    # Prevent direct status changes - status should only change through specific workflows.
+    # The only exception is an edited rejected record, which is automatically reset to draft.
+    if "status" in data and not (current_record.get("status") == "rejected" and data["status"] == "draft"):
         raise fastapi.HTTPException(
             status_code=400,
             detail="Cannot update BHT status directly. Use the submit-for-review endpoint to finalize BHT records."

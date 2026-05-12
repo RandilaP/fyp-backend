@@ -5,7 +5,12 @@ from typing import Optional
 
 from util.supabse import supabase
 from utils.security import verify_password, create_access_token, decode_token, hash_password
-from controllers.auth_controller import signup_doctor, login_user_and_create_token, get_user_by_email
+from controllers.auth_controller import (
+    signup_doctor,
+    login_user_and_create_token,
+    get_user_by_email,
+    change_password,
+)
 
 router = APIRouter()
 bearer_scheme = HTTPBearer()
@@ -27,6 +32,12 @@ class SignupRequest(BaseModel):
     password: str
     role: str  # Must be "Doctor" or "Consultant"
     ward_id: Optional[str] = None  # Required for Doctors, optional for Consultants
+
+
+
+class ChangePasswordRequest(BaseModel):
+    email: str
+    new_password: str
 
 
 
@@ -82,6 +93,16 @@ def signup(req: SignupRequest):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     created.pop("password_hash", None)
     return created
+
+
+
+@router.post("/change-password")
+def change_password_endpoint(req: ChangePasswordRequest):
+    try:
+        updated = change_password(req.email, req.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    return {"detail": "Password updated successfully", "user": updated}
 
 @router.post("/me")
 def get_current_user_info(requests: HTTPAuthorizationCredentials = Depends(bearer_scheme)):

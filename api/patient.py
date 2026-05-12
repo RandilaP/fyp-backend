@@ -6,6 +6,7 @@ from models.llm_report import LLMReportCreate, LLMReportUpdate, LLMReportRespons
 from util.supabse import supabase
 from typing import Optional
 from datetime import datetime
+from utils.patient_visibility import filter_active_patients
 
 router = fastapi.APIRouter()
 
@@ -52,7 +53,8 @@ def get_patient(patient_id: str):
 @router.get("/patients/", response_model=list[PatientResponse])
 def list_patients():
     response = supabase.table("patients").select("*").execute()
-    return [PatientResponse(**patient) for patient in response.data]
+    active_patients = filter_active_patients(response.data)
+    return [PatientResponse(**patient) for patient in active_patients]
 
 @router.put("/patients/{patient_id}", response_model=PatientResponse)
 def update_patient(patient_id: str, patient: PatientUpdate):
@@ -94,7 +96,8 @@ def get_my_patients(current_user: dict = fastapi.Depends(get_current_user)):
         )
     
     response = supabase.table("patients").select("*").eq("ward_id", ward_id).execute()
-    return [PatientResponse(**patient) for patient in response.data]
+    active_patients = filter_active_patients(response.data)
+    return [PatientResponse(**patient) for patient in active_patients]
 
 
 @router.get("/doctors/my-bhts", response_model=list[BHTRecordResponse])

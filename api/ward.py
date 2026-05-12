@@ -5,6 +5,7 @@ from models.bht_record import BHTRecordResponse
 from models.patient import PatientResponse
 from util.supabse import supabase
 from typing import Optional
+from utils.patient_visibility import filter_active_patients
 
 router = fastapi.APIRouter()
 
@@ -49,7 +50,8 @@ def update_ward(ward_id: str, ward: WardUpdate):
 def get_ward_patients(ward_id: str):
     """Get all patients in a specific ward."""
     response = supabase.table("patients").select("*").eq("ward_id", ward_id).execute()
-    return [PatientResponse(**patient) for patient in response.data]
+    active_patients = filter_active_patients(response.data)
+    return [PatientResponse(**patient) for patient in active_patients]
 
 
 @router.get("/wards/{ward_id}/bht_records", response_model=list[BHTRecordResponse], dependencies=[fastapi.Depends(get_current_user)])

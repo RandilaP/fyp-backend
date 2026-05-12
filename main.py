@@ -3,12 +3,26 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+import os
 
 from api import user_crud, auth, ward, bht_record, llm_report, patient, approval, analytics, consultant
 
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI()
+
+# Configure CORS
+cors_origins = os.getenv("CORS_ORIGINS", "http://localhost:3000,https://fyp.randila.com").split(",")
+cors_origins = [origin.strip() for origin in cors_origins]  # Strip whitespace
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=cors_origins,
+    # Allow common local dev origins via regex (different ports)
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.middleware("http")
@@ -93,16 +107,6 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
-    # Support local dev servers that may run on non-3000 ports (e.g. 3001/5173).
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 if __name__ == "__main__":

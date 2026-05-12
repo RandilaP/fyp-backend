@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from util.supabse import supabase
 from api.auth import get_current_user, require_role
 from datetime import datetime, timedelta
+from utils.patient_visibility import filter_active_patients
 
 router = fastapi.APIRouter()
 
@@ -83,7 +84,7 @@ def get_consultant_dashboard(
     
     if ward_ids:
         patients_resp = supabase.table("patients").select("*").in_("ward_id", ward_ids).execute()
-        patients = patients_resp.data
+        patients = filter_active_patients(patients_resp.data)
         total_patients = len(patients)
         patient_ids = [p["patient_id"] for p in patients]
         
@@ -228,7 +229,7 @@ def get_submitted_patients(
     
     # Get patients in these wards
     patients_resp = supabase.table("patients").select("*").in_("ward_id", ward_ids).execute()
-    patients = patients_resp.data
+    patients = filter_active_patients(patients_resp.data)
     
     if not patients:
         return []
@@ -329,6 +330,20 @@ def get_patient_full_details(
     # Get all BHT records
     bhts_resp = supabase.table("bht_records").select("*").eq("patient_id", patient_id).order("upload_date", desc=True).execute()
     bhts = bhts_resp.data
+
+    doctor_ids = list({bht.get("doctor_id") for bht in bhts if bht.get("doctor_id")})
+    doctors_by_id = {}
+    if doctor_ids:
+        doctors_resp = supabase.table("users").select("user_id, name, email").in_("user_id", doctor_ids).execute()
+        doctors_by_id = {doctor["user_id"]: doctor for doctor in doctors_resp.data}
+
+    enriched_bhts = []
+    for bht in bhts:
+        doctor = doctors_by_id.get(bht.get("doctor_id"))
+        enriched_bht = dict(bht)
+        enriched_bht["doctor_name"] = doctor["name"] if doctor else None
+        enriched_bht["doctor_email"] = doctor["email"] if doctor else None
+        enriched_bhts.append(enriched_bht)
     
     # Get doctor info
     doctor = None
@@ -363,13 +378,13 @@ def get_patient_full_details(
             "created_at": summary.get("created_at") if summary else None,
             "updated_at": summary.get("updated_at") if summary else None
         } if summary else None,
-        "bht_records": bhts,
+        "bht_records": enriched_bhts,
         "statistics": {
-            "total_bhts": len(bhts),
-            "draft_bhts": len([b for b in bhts if b["status"] == "draft"]),
-            "finalized_bhts": len([b for b in bhts if b["status"] == "finalized"]),
-            "approved_bhts": len([b for b in bhts if b["status"] == "approved"]),
-            "rejected_bhts": len([b for b in bhts if b["status"] == "rejected"])
+            "total_bhts": len(enriched_bhts),
+            "draft_bhts": len([b for b in enriched_bhts if b["status"] == "draft"]),
+            "finalized_bhts": len([b for b in enriched_bhts if b["status"] == "finalized"]),
+            "approved_bhts": len([b for b in enriched_bhts if b["status"] == "approved"]),
+            "rejected_bhts": len([b for b in enriched_bhts if b["status"] == "rejected"])
         }
     }
 
