@@ -17,6 +17,8 @@ cors_origins = [origin.strip() for origin in cors_origins]  # Strip whitespace
 app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
+    # Allow common local dev origins via regex (different ports)
+    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -105,16 +107,6 @@ def custom_openapi():
 
 
 app.openapi = custom_openapi
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", ""],
-    # Support local dev servers that may run on non-3000 ports (e.g. 3001/5173).
-    allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 
 if __name__ == "__main__":
